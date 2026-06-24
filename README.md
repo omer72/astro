@@ -6,6 +6,7 @@ A lightweight App Store ASO keyword research tool. Type a keyword and instantly 
 - **"in title" flags** — which competitors put the keyword in their app title (the slot Apple weights heaviest).
 - **Difficulty gauge** — a 0–100 heuristic from competitors' median rating count (~55%) and title usage in the top 10 (~45%).
 - **Adjacent keywords** — mined from the ranking apps' titles and descriptions; click any to re-scout it.
+- **Mine a competitor** — paste an App Store URL or numeric ID; pulls keywords straight from that app's title + description so you can scout each.
 - **8 App Store countries** — including 🇺🇸 US and 🇮🇱 Israel.
 
 Single static `index.html`, no build step, no dependencies. All data comes live from Apple's public

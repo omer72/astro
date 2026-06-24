@@ -67,6 +67,29 @@
   }
   .chip:hover{border-color:var(--indigo);color:var(--indigo);background:var(--indigo-soft)}
 
+  /* Mine-from-app row */
+  .byapp{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px}
+  .byapp .lbl{font-size:12px;color:var(--ink-soft);font-family:var(--mono);margin-right:2px}
+  .byapp input{
+    flex:1 1 280px;min-width:0;font-size:13.5px;font-family:var(--ui);color:var(--ink);
+    background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:0 12px;height:36px;outline:none;
+  }
+  .byapp input::placeholder{color:#A8A4AD}
+  button.go.alt{
+    background:var(--card);color:var(--ink);border:1px solid var(--hair);height:36px;padding:0 14px;font-weight:600;font-size:13.5px;border-radius:10px;cursor:pointer;
+  }
+  button.go.alt:hover{border-color:var(--indigo);color:var(--indigo);background:var(--indigo-soft)}
+  button.go.alt:disabled{opacity:.5;cursor:default}
+
+  /* App-mined keyword panel */
+  .from-app{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:18px;margin-top:22px;text-align:left}
+  .from-app .head{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+  .from-app .head img{width:56px;height:56px;border-radius:12px;border:1px solid var(--hair);background:var(--paper);object-fit:cover}
+  .from-app .head .name{font-size:16px;font-weight:600;letter-spacing:-0.01em}
+  .from-app .head .sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+  .from-app .hint{font-size:13px;color:var(--ink-soft);margin-bottom:10px}
+  .from-app .chips{display:flex;flex-wrap:wrap;gap:7px}
+
   .note{font-size:12px;color:var(--ink-soft);margin-top:4px}
   .note b{color:var(--ink);font-weight:600}
 
@@ -171,6 +194,12 @@
       <button class="chip">loyalty card</button>
       <button class="chip">grocery rewards</button>
     </div>
+
+    <div class="byapp">
+      <span class="lbl">or mine a competitor:</span>
+      <input id="appq" type="text" placeholder="App Store URL or ID — e.g. https://apps.apple.com/us/app/instagram/id389801252" autocomplete="off" />
+      <button class="go alt" id="appgo">Mine keywords</button>
+    </div>
   </header>
 
   <div id="state" class="state">
@@ -238,12 +267,36 @@
   var qEl=document.getElementById('q'),
       cEl=document.getElementById('country'),
       goEl=document.getElementById('go'),
+      appEl=document.getElementById('appq'),
+      appGoEl=document.getElementById('appgo'),
       stateEl=document.getElementById('state'),
       resEl=document.getElementById('results'),
       listEl=document.getElementById('list'),
       kwEl=document.getElementById('kwchips'),
       titleStatEl=document.getElementById('titlestat'),
       titleListEl=document.getElementById('titlelist');
+
+  // Word-frequency mining shared by adjacent-keywords and app reverse-lookup.
+  function mineKeywords(text, excludeSet){
+    var ex=excludeSet||new Set();
+    var freq={};
+    (text||'').toLowerCase().replace(/[^a-zÀ-ɏ0-9\s]/g,' ').split(/\s+/).forEach(function(w){
+      if(w.length<3||w.length>18)return;
+      if(STOP.has(w))return;
+      if(ex.has(w))return;
+      if(/^\d+$/.test(w))return;
+      freq[w]=(freq[w]||0)+1;
+    });
+    return Object.keys(freq).map(function(w){return [w,freq[w]];})
+      .sort(function(a,b){return b[1]-a[1];});
+  }
+
+  function parseAppId(s){
+    s=(s||'').trim();
+    if(!s)return null;
+    var m=s.match(/id(\d{6,})/i)||s.match(/^\s*(\d{6,})\s*$/);
+    return m?m[1]:null;
+  }
 
   // JSONP helper (bypasses CORS — Apple's search API supports &callback=)
   var jid=0;
@@ -362,19 +415,8 @@
     }).join('');
 
     // --- adjacent keywords (mined from titles + descriptions) ---
-    var freq={};
-    results.forEach(function(a){
-      var text=((a.trackName||'')+' '+(a.description||'')).toLowerCase();
-      text.replace(/[^a-z\u00C0-\u024F0-9\s]/g,' ').split(/\s+/).forEach(function(w){
-        if(w.length<3||w.length>18)return;
-        if(STOP.has(w))return;
-        if(qTokens.indexOf(w)>-1)return;
-        if(/^\d+$/.test(w))return;
-        freq[w]=(freq[w]||0)+1;
-      });
-    });
-    var adj=Object.keys(freq).map(function(w){return [w,freq[w]];})
-      .sort(function(a,b){return b[1]-a[1];}).slice(0,18);
+    var combined=results.map(function(a){return (a.trackName||'')+' '+(a.description||'');}).join(' ');
+    var adj=mineKeywords(combined,new Set(qTokens)).slice(0,18);
     kwEl.innerHTML=adj.length?adj.map(function(p){
       return '<button class="kw" data-kw="'+esc(p[0])+'">'+esc(p[0])+'<span class="n">'+p[1]+'</span></button>';
     }).join(''):'<div style="color:var(--ink-soft);font-size:13px">No clear adjacent terms.</div>';
@@ -393,6 +435,61 @@
     resEl.classList.remove('hidden');
   }
 
+  function scoutApp(raw){
+    var id=parseAppId(raw);
+    if(!id){
+      setState('<div class="big">Paste an App Store URL or numeric app ID.</div>'+
+        '<div>e.g. <code>https://apps.apple.com/us/app/instagram/id389801252</code> or just <code>389801252</code></div>');
+      return;
+    }
+    appGoEl.disabled=true;
+    setState('<div class="spinner"></div><div class="big">Mining keywords from app '+esc(id)+'…</div><div>Reading the App Store listing</div>');
+    var url='https://itunes.apple.com/lookup?id='+encodeURIComponent(id)+'&country='+cEl.value+'&entity=software';
+    jsonp(url).then(function(data){
+      appGoEl.disabled=false;
+      var app=data&&data.results&&data.results[0];
+      if(!app||app.kind&&app.kind!=='software'){
+        setState('<div class="big">No app found for ID '+esc(id)+' in this store.</div><div>Check the URL or switch country.</div>');
+        return;
+      }
+      var kws=mineKeywords((app.trackName||'')+' '+(app.description||'')).slice(0,30);
+      if(!kws.length){
+        setState('<div class="big">Found “'+esc(app.trackName||'')+'” but couldn’t extract any usable keywords.</div>');
+        return;
+      }
+      stateEl.innerHTML='<div class="from-app">'+
+        '<div class="head">'+
+          '<img src="'+esc(app.artworkUrl100||app.artworkUrl60||'')+'" alt="" />'+
+          '<div><div class="name">'+esc(app.trackName||'')+'</div>'+
+          '<div class="sub">'+esc(app.sellerName||app.artistName||'')+' · '+esc(app.primaryGenreName||'')+'</div></div>'+
+        '</div>'+
+        '<div class="hint">Top words from this app\'s title + description. Click any to scout it.</div>'+
+        '<div class="chips">'+kws.map(function(p){
+          return '<button class="kw" data-kw="'+esc(p[0])+'">'+esc(p[0])+'<span class="n">'+p[1]+'</span></button>';
+        }).join('')+'</div>'+
+      '</div>';
+      stateEl.classList.remove('hidden');
+      resEl.classList.add('hidden');
+      Array.prototype.forEach.call(stateEl.querySelectorAll('.kw'),function(b){
+        b.addEventListener('click',function(){search(b.getAttribute('data-kw'));window.scrollTo({top:0,behavior:'smooth'});});
+      });
+    }).catch(function(err){
+      appGoEl.disabled=false;
+      if(sandboxed){
+        setState('<div class="big">This page can’t reach the App Store while it’s embedded.</div>'+
+          '<div>Download this file and open it directly in your browser, then try again.</div>');
+      }else{
+        setState('<div class="big">Couldn’t reach the App Store ('+esc(err.message)+').</div><div>Check your connection and try again.</div>');
+      }
+    });
+  }
+
+  // self-check (silent on pass, logs on regression)
+  console.assert(parseAppId('https://apps.apple.com/us/app/instagram/id389801252')==='389801252','parseAppId url');
+  console.assert(parseAppId('389801252')==='389801252','parseAppId bare id');
+  console.assert(parseAppId('hello')===null,'parseAppId rejects garbage');
+  console.assert(mineKeywords('hello hello world the and').length===2,'mineKeywords stop+dedup');
+
   // events
   if(sandboxed){
     setState('<div class="big">Download this file to use it.</div>'+
@@ -402,6 +499,8 @@
   goEl.addEventListener('click',function(){search(qEl.value);});
   qEl.addEventListener('keydown',function(e){if(e.key==='Enter')search(qEl.value);});
   cEl.addEventListener('change',function(){if(qEl.value.trim())search(qEl.value);});
+  appGoEl.addEventListener('click',function(){scoutApp(appEl.value);});
+  appEl.addEventListener('keydown',function(e){if(e.key==='Enter')scoutApp(appEl.value);});
   Array.prototype.forEach.call(document.querySelectorAll('.examples .chip'),function(c){
     c.addEventListener('click',function(){search(c.textContent);});
   });
