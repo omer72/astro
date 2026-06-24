@@ -8,6 +8,7 @@ A lightweight App Store ASO keyword research tool. Type a keyword and instantly 
 - **Adjacent keywords** — mined from the ranking apps' titles and descriptions; click any to re-scout it.
 - **Mine a competitor** — paste an App Store URL or numeric ID; pulls keywords straight from that app's title + description so you can scout each.
 - **Compare 8 markets at once** — one click fans the keyword out to all 8 stores in parallel; see difficulty side-by-side and drill into any market.
+- **Recent scouts + delta** — every scout is logged locally; revisit a keyword and see how its difficulty moved since last time. Recent chips appear on the landing screen.
 - **8 App Store countries** — including 🇺🇸 US and 🇮🇱 Israel.
 
 Single static `index.html`, no build step, no dependencies. All data comes live from Apple's public

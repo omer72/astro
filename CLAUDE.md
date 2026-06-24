@@ -24,6 +24,10 @@ Two single-source helpers; keep both callers routed through them so the views ca
 - `mineKeywords(text, excludeSet)` — word-frequency mining (stop-word filter, length 3–18, drops pure digits). Used by `render()` for adjacent keywords and by `scoutApp()` for competitor mining.
 - `analyze(term, results)` — the canonical difficulty calculator. Returns `{qTokens, top, inTitle, titleHits, titleUsage, medianRatings, difficulty, dLabel, dColor, dBg}`. Used by both `render()` and `renderCompare()`.
 
+## History (localStorage)
+
+`localStorage['scout.v1']` holds a `{ "<lowercased term>|<country>": [{ts, difficulty, medianRatings}, ...] }` map. `render()` calls `previousSample()` *before* `recordScout()` so the delta indicator compares to the prior scout, not the one we're about to write. `recordScout()` dedupes identical samples within 1 hour to keep the delta meaningful when the user reloads or hammers Scout. Caps: 10 samples per key, 50 keys total (LRU by most-recent-sample timestamp). All localStorage access is wrapped in try/catch so Safari private mode and quota-exceeded both degrade silently to "no history". The idle screen calls `renderIdleRecent()` once on load to inject up-to-8 most-recent-scout chips.
+
 Difficulty heuristic: `0.55 * ratingStrength + 0.45 * titleUsage`, where `ratingStrength = log10(medianRatings+1)/6` (so ~1M ratings → 1.0) and `titleUsage` is the fraction of top-10 apps with the keyword in their title. Thresholds: <33 EASY, <66 MEDIUM, else HARD. If you tune the formula in `analyze()`, update the weights described in `README.md` and the footer copy in `index.html` so they stay consistent.
 
 Adjacent keywords are mined from `trackName + description` across all results, filtered by a hardcoded `STOP` set, length 3–18, non-numeric, not in the query tokens.

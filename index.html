@@ -92,6 +92,22 @@
   .from-app .hint{font-size:13px;color:var(--ink-soft);margin-bottom:10px}
   .from-app .chips{display:flex;flex-wrap:wrap;gap:7px}
 
+  /* Delta indicator in the difficulty cell */
+  .delta{display:block;margin-top:6px;font-size:11px;font-family:var(--mono);color:var(--ink-soft)}
+  .delta b{font-weight:700}
+  .delta .up{color:var(--hard)}
+  .delta .down{color:var(--easy)}
+  .delta .flat{color:var(--ink-soft)}
+
+  /* Recent-scouts row (idle state) */
+  .recent-wrap{margin-top:22px;text-align:left}
+  .recent-wrap .lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);font-family:var(--mono);margin-bottom:8px;text-align:center}
+  .recent-chips{display:flex;gap:7px;flex-wrap:wrap;justify-content:center}
+  .recent{font-size:13px;font-family:var(--mono);border:1px solid var(--hair);background:var(--card);color:var(--ink);
+    border-radius:8px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .12s}
+  .recent:hover{border-color:var(--indigo);background:var(--indigo-soft)}
+  .recent .d{font-weight:700;font-size:11px;padding:1px 5px;border-radius:4px}
+
   /* Multi-country compare grid */
   .compare-head{padding:6px 4px 16px;text-align:left}
   .compare-head .big{font-size:15px;color:var(--ink);font-weight:600;margin-bottom:4px}
@@ -250,6 +266,7 @@
         <div class="v" id="s-diff"></div>
         <div class="meter"><div class="pin" id="s-pin"></div></div>
         <span class="diff-label" id="s-difflbl"></span>
+        <span class="delta" id="s-delta"></span>
       </div>
     </div>
 
@@ -311,6 +328,52 @@
     {code:'fr',flag:'🇫🇷',name:'France'},
     {code:'es',flag:'🇪🇸',name:'Spain'}
   ];
+
+  // --- localStorage history: passive log of each scout, used for delta on revisit + recent list ---
+  var HISTORY_KEY='scout.v1';
+  function loadHistory(){
+    try{ return JSON.parse(localStorage.getItem(HISTORY_KEY)||'{}'); }catch(e){ return {}; }
+  }
+  function saveHistory(h){
+    try{ localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); }catch(e){} // quota / disabled mode: silently drop
+  }
+  function histKey(term,country){ return term.toLowerCase()+'|'+country; }
+  function recordScout(term,country,difficulty,medianRatings){
+    var h=loadHistory(), k=histKey(term,country);
+    var arr=h[k]||[];
+    var last=arr[arr.length-1];
+    // dedupe: skip if identical to the previous sample within the last hour (keeps delta meaningful when reloading or hammering Scout)
+    if(last && last.difficulty===difficulty && last.medianRatings===medianRatings && Date.now()-last.ts<3600000) return;
+    arr.push({ts:Date.now(),difficulty:difficulty,medianRatings:medianRatings});
+    if(arr.length>10) arr=arr.slice(-10);
+    h[k]=arr;
+    var keys=Object.keys(h);
+    if(keys.length>50){ // LRU cap by most-recent-sample
+      keys.sort(function(a,b){return h[b][h[b].length-1].ts-h[a][h[a].length-1].ts;});
+      var pruned={}; keys.slice(0,50).forEach(function(kk){pruned[kk]=h[kk];}); h=pruned;
+    }
+    saveHistory(h);
+  }
+  function previousSample(term,country){
+    var arr=loadHistory()[histKey(term,country)];
+    return (arr && arr.length>=1) ? arr[arr.length-1] : null; // the one stored on the prior scout
+  }
+  function recentScouts(limit){
+    var h=loadHistory();
+    return Object.keys(h).map(function(k){
+      var arr=h[k], last=arr[arr.length-1], sep=k.lastIndexOf('|');
+      return {keyword:k.slice(0,sep),country:k.slice(sep+1),difficulty:last.difficulty,ts:last.ts};
+    }).sort(function(a,b){return b.ts-a.ts;}).slice(0,limit||8);
+  }
+  function ago(ts){
+    var s=Math.floor((Date.now()-ts)/1000);
+    if(s<60) return 'just now';
+    var m=Math.floor(s/60); if(m<60) return m+'m ago';
+    var h=Math.floor(m/60); if(h<24) return h+'h ago';
+    var d=Math.floor(h/24); if(d<30) return d+'d ago';
+    return new Date(ts).toLocaleDateString();
+  }
+  var FLAGS={us:'🇺🇸',il:'🇮🇱',gb:'🇬🇧',ca:'🇨🇦',au:'🇦🇺',de:'🇩🇪',fr:'🇫🇷',es:'🇪🇸'};
 
   // Single source of truth for the difficulty heuristic. render() and renderCompare() both call this so they can't drift.
   function analyze(term,results){
@@ -424,6 +487,8 @@
       return;
     }
     var a=analyze(term,results);
+    var prev=previousSample(term,cEl.value); // read BEFORE recording so we compare to the prior scout
+    recordScout(term,cEl.value,a.difficulty,a.medianRatings);
 
     // --- summary ---
     document.getElementById('s-kw').textContent=term;
@@ -434,6 +499,14 @@
     var dl=document.getElementById('s-difflbl');
     dl.textContent=a.dLabel+' to rank';
     dl.style.color=a.dColor; dl.style.background=a.dBg;
+    var deltaEl=document.getElementById('s-delta');
+    if(prev){
+      var diff=a.difficulty-prev.difficulty;
+      var arrow=diff>0?'<span class="up">▲ '+diff+'</span>':diff<0?'<span class="down">▼ '+Math.abs(diff)+'</span>':'<span class="flat">●</span>';
+      deltaEl.innerHTML=arrow+' since '+ago(prev.ts)+' (was <b>'+prev.difficulty+'</b>)';
+    }else{
+      deltaEl.textContent='';
+    }
 
     // --- app list ---
     listEl.innerHTML=results.map(function(app,i){
@@ -583,6 +656,28 @@
     });
   }
 
+  function renderIdleRecent(){
+    if(sandboxed) return;
+    var items=recentScouts(8);
+    if(!items.length) return;
+    var html='<div class="recent-wrap"><div class="lbl">Recent scouts · click to re-scout</div><div class="recent-chips">'+
+      items.map(function(it){
+        var bg=it.difficulty<33?'rgba(15,158,142,.18)':it.difficulty<66?'rgba(242,163,60,.22)':'rgba(229,72,77,.18)';
+        var fg=it.difficulty<33?'var(--easy)':it.difficulty<66?'var(--mid)':'var(--hard)';
+        return '<button class="recent" data-kw="'+esc(it.keyword)+'" data-cc="'+esc(it.country)+'" title="last seen '+ago(it.ts)+'">'+
+          (FLAGS[it.country]||'')+' '+esc(it.keyword)+
+          ' <span class="d" style="color:'+fg+';background:'+bg+'">'+it.difficulty+'</span></button>';
+      }).join('')+
+      '</div></div>';
+    stateEl.insertAdjacentHTML('beforeend', html);
+    Array.prototype.forEach.call(stateEl.querySelectorAll('.recent[data-kw]'),function(b){
+      b.addEventListener('click',function(){
+        cEl.value=b.getAttribute('data-cc');
+        search(b.getAttribute('data-kw'));
+      });
+    });
+  }
+
   // self-check (silent on pass, logs on regression)
   console.assert(parseAppId('https://apps.apple.com/us/app/instagram/id389801252')==='389801252','parseAppId url');
   console.assert(parseAppId('389801252')==='389801252','parseAppId bare id');
@@ -590,6 +685,9 @@
   console.assert(mineKeywords('hello hello world the and').length===2,'mineKeywords stop+dedup');
   console.assert(analyze('x',[]).difficulty===0,'analyze empty');
   console.assert(analyze('x',[{trackName:'x best',userRatingCount:1000000}]).difficulty>50,'analyze high difficulty');
+  console.assert(histKey('Loyalty Card','us')==='loyalty card|us','histKey lowercases');
+  console.assert(ago(Date.now()-30000)==='just now','ago just now');
+  console.assert(/m ago$/.test(ago(Date.now()-90000)),'ago minutes');
 
   // events
   if(sandboxed){
@@ -606,6 +704,7 @@
   Array.prototype.forEach.call(document.querySelectorAll('.examples .chip'),function(c){
     c.addEventListener('click',function(){search(c.textContent);});
   });
+  renderIdleRecent();
 })();
 </script>
 </body>
