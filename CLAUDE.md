@@ -18,10 +18,13 @@ Flow (all in `index.html`):
 1. `search(term)` builds the iTunes URL with `country`, `entity=software`, `limit=50` and calls `jsonp()`.
 2. `render(term, results)` does everything from one response: title-match detection, difficulty score, app list, adjacent-keyword mining, title-usage panel.
 3. `scoutApp(raw)` is the competitor reverse-lookup path: `parseAppId()` extracts the numeric ID from a URL or bare digits, hits `itunes.apple.com/lookup`, then re-uses `mineKeywords()` on the app's title + description. Renders into the same state element with clickable chips that fall back into `search()`.
+4. `compareCountries(term)` fans the keyword out to all 8 markets in parallel via `Promise.all`, then `renderCompare()` draws a 2-col grid of cards. Clicking a card flips the country `<select>` and calls `search()` to drill in.
 
-`mineKeywords(text, excludeSet)` is the single source of truth for word-frequency mining (stop-word filter, length 3–18, drops pure digits). Both `render()` and `scoutApp()` route through it — keep it that way; don't reimplement the loop.
+Two single-source helpers; keep both callers routed through them so the views can't drift:
+- `mineKeywords(text, excludeSet)` — word-frequency mining (stop-word filter, length 3–18, drops pure digits). Used by `render()` for adjacent keywords and by `scoutApp()` for competitor mining.
+- `analyze(term, results)` — the canonical difficulty calculator. Returns `{qTokens, top, inTitle, titleHits, titleUsage, medianRatings, difficulty, dLabel, dColor, dBg}`. Used by both `render()` and `renderCompare()`.
 
-Difficulty heuristic (`render`): `0.55 * ratingStrength + 0.45 * titleUsage`, where `ratingStrength = log10(medianRatings+1)/6` (so ~1M ratings → 1.0) and `titleUsage` is the fraction of top-10 apps with the keyword in their title. Thresholds: <33 EASY, <66 MEDIUM, else HARD. If you tune the formula, update the weights described in `README.md` and the footer copy in `index.html` so they stay consistent.
+Difficulty heuristic: `0.55 * ratingStrength + 0.45 * titleUsage`, where `ratingStrength = log10(medianRatings+1)/6` (so ~1M ratings → 1.0) and `titleUsage` is the fraction of top-10 apps with the keyword in their title. Thresholds: <33 EASY, <66 MEDIUM, else HARD. If you tune the formula in `analyze()`, update the weights described in `README.md` and the footer copy in `index.html` so they stay consistent.
 
 Adjacent keywords are mined from `trackName + description` across all results, filtered by a hardcoded `STOP` set, length 3–18, non-numeric, not in the query tokens.
 

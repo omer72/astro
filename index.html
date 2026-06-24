@@ -58,6 +58,8 @@
   button.go{background:var(--indigo);color:#fff;border-color:var(--indigo);font-weight:600;padding:0 22px}
   button.go:hover{filter:brightness(1.06)}
   button.go:disabled{opacity:.5;cursor:default}
+  button.go.ghost{background:var(--card);color:var(--indigo);border-color:var(--indigo);padding:0 16px}
+  button.go.ghost:hover{background:var(--indigo-soft);filter:none}
 
   .examples{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
   .examples .lbl{font-size:12px;color:var(--ink-soft);font-family:var(--mono);margin-right:2px}
@@ -89,6 +91,27 @@
   .from-app .head .sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
   .from-app .hint{font-size:13px;color:var(--ink-soft);margin-bottom:10px}
   .from-app .chips{display:flex;flex-wrap:wrap;gap:7px}
+
+  /* Multi-country compare grid */
+  .compare-head{padding:6px 4px 16px;text-align:left}
+  .compare-head .big{font-size:15px;color:var(--ink);font-weight:600;margin-bottom:4px}
+  .compare-head .sub{font-size:13px;color:var(--ink-soft)}
+  .compare-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  @media(max-width:560px){.compare-grid{grid-template-columns:1fr}}
+  .cc{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:14px;cursor:pointer;text-align:left;
+    transition:border-color .12s,box-shadow .12s;width:100%;font-family:var(--ui)}
+  .cc:hover{border-color:var(--indigo);box-shadow:0 1px 0 rgba(22,21,26,.04)}
+  .cc.empty{opacity:.55;cursor:default}
+  .cc.empty:hover{border-color:var(--hair);box-shadow:none}
+  .cc .h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .cc .flag{font-size:18px;margin-right:6px}
+  .cc .name{font-size:14px;font-weight:600;color:var(--ink)}
+  .cc .meta{font-size:11.5px;color:var(--ink-soft);font-family:var(--mono);margin-top:4px}
+  .cc .diff{font-size:24px;font-weight:680;font-family:var(--mono);text-align:right;line-height:1}
+  .cc .lbl{font-size:10px;font-family:var(--mono);font-weight:700;padding:2px 6px;border-radius:5px;display:inline-block;margin-top:4px}
+  .cc .top{display:flex;gap:8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--hair)}
+  .cc .top img{width:28px;height:28px;border-radius:7px;border:1px solid var(--hair);background:var(--paper);object-fit:cover}
+  .cc .top .tname{font-size:12.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
 
   .note{font-size:12px;color:var(--ink-soft);margin-top:4px}
   .note b{color:var(--ink);font-weight:600}
@@ -184,6 +207,7 @@
         <option value="es">🇪🇸 Spain</option>
       </select>
       <button class="go" id="go">Scout</button>
+      <button class="go ghost" id="cmpgo" title="Compare difficulty for this keyword across all 8 markets">Compare 8</button>
     </div>
 
     <div class="examples">
@@ -267,6 +291,7 @@
   var qEl=document.getElementById('q'),
       cEl=document.getElementById('country'),
       goEl=document.getElementById('go'),
+      cmpEl=document.getElementById('cmpgo'),
       appEl=document.getElementById('appq'),
       appGoEl=document.getElementById('appgo'),
       stateEl=document.getElementById('state'),
@@ -275,6 +300,41 @@
       kwEl=document.getElementById('kwchips'),
       titleStatEl=document.getElementById('titlestat'),
       titleListEl=document.getElementById('titlelist');
+
+  var COMPARE=[
+    {code:'us',flag:'🇺🇸',name:'United States'},
+    {code:'il',flag:'🇮🇱',name:'Israel'},
+    {code:'gb',flag:'🇬🇧',name:'United Kingdom'},
+    {code:'ca',flag:'🇨🇦',name:'Canada'},
+    {code:'au',flag:'🇦🇺',name:'Australia'},
+    {code:'de',flag:'🇩🇪',name:'Germany'},
+    {code:'fr',flag:'🇫🇷',name:'France'},
+    {code:'es',flag:'🇪🇸',name:'Spain'}
+  ];
+
+  // Single source of truth for the difficulty heuristic. render() and renderCompare() both call this so they can't drift.
+  function analyze(term,results){
+    var qTokens=term.toLowerCase().split(/\s+/).filter(Boolean);
+    var qLower=term.toLowerCase();
+    var top=results.slice(0,10);
+    function inTitle(app){
+      var t=(app.trackName||'').toLowerCase();
+      if(t.indexOf(qLower)>-1)return true;
+      return qTokens.every(function(tok){return t.indexOf(tok)>-1;});
+    }
+    var titleHits=top.filter(inTitle);
+    var titleUsage=top.length?titleHits.length/top.length:0;
+    var counts=top.map(function(a){return a.userRatingCount||0;}).sort(function(a,b){return a-b;});
+    var mid=Math.floor(counts.length/2);
+    var medianRatings=!counts.length?0:(counts.length%2?counts[mid]:Math.round((counts[mid-1]+counts[mid])/2));
+    var ratingStrength=Math.min(1, Math.log10((medianRatings||0)+1)/6);
+    var difficulty=Math.round(100*(0.55*ratingStrength+0.45*titleUsage));
+    var dLabel=difficulty<33?'EASY':difficulty<66?'MEDIUM':'HARD';
+    var dColor=difficulty<33?'var(--easy)':difficulty<66?'var(--mid)':'var(--hard)';
+    var dBg=difficulty<33?'rgba(15,158,142,.12)':difficulty<66?'rgba(242,163,60,.14)':'rgba(229,72,77,.12)';
+    return {qTokens:qTokens,top:top,inTitle:inTitle,titleHits:titleHits,titleUsage:titleUsage,
+            medianRatings:medianRatings,difficulty:difficulty,dLabel:dLabel,dColor:dColor,dBg:dBg};
+  }
 
   // Word-frequency mining shared by adjacent-keywords and app reverse-lookup.
   function mineKeywords(text, excludeSet){
@@ -363,60 +423,37 @@
       setState('<div class="big">No apps found for “'+esc(term)+'” in this store.</div><div>Try a broader term, or switch country.</div>');
       return;
     }
-    var qTokens=term.toLowerCase().split(/\s+/).filter(Boolean);
-    var qLower=term.toLowerCase();
-    var top=results.slice(0,10);
-
-    // --- title usage ---
-    function inTitle(app){
-      var t=(app.trackName||'').toLowerCase();
-      if(t.indexOf(qLower)>-1)return true;
-      return qTokens.every(function(tok){return t.indexOf(tok)>-1;});
-    }
-    var titleHits=top.filter(inTitle);
-    var titleUsage=titleHits.length/top.length;
-
-    // --- rating strength (log scaled median of top 10) ---
-    var counts=top.map(function(a){return a.userRatingCount||0;}).sort(function(a,b){return a-b;});
-    var mid=Math.floor(counts.length/2);
-    var medianRatings=counts.length%2?counts[mid]:Math.round((counts[mid-1]+counts[mid])/2);
-    var ratingStrength=Math.min(1, Math.log10((medianRatings||0)+1)/6); // 1M ratings ≈ 1.0
-
-    var difficulty=Math.round(100*(0.55*ratingStrength+0.45*titleUsage));
-    var dLabel = difficulty<33?'EASY':difficulty<66?'MEDIUM':'HARD';
-    var dColor = difficulty<33?'var(--easy)':difficulty<66?'var(--mid)':'var(--hard)';
+    var a=analyze(term,results);
 
     // --- summary ---
     document.getElementById('s-kw').textContent=term;
     document.getElementById('s-count').innerHTML=results.length+(results.length>=50?'+':'');
-    document.getElementById('s-ratings').innerHTML=fmt(medianRatings);
-    document.getElementById('s-diff').innerHTML=difficulty+'<small>/100</small>';
-    var pin=document.getElementById('s-pin');
-    pin.style.left='calc('+difficulty+'% - 1.5px)';
+    document.getElementById('s-ratings').innerHTML=fmt(a.medianRatings);
+    document.getElementById('s-diff').innerHTML=a.difficulty+'<small>/100</small>';
+    document.getElementById('s-pin').style.left='calc('+a.difficulty+'% - 1.5px)';
     var dl=document.getElementById('s-difflbl');
-    dl.textContent=dLabel+' to rank';
-    dl.style.color=dColor;dl.style.background=
-      difficulty<33?'rgba(15,158,142,.12)':difficulty<66?'rgba(242,163,60,.14)':'rgba(229,72,77,.12)';
+    dl.textContent=a.dLabel+' to rank';
+    dl.style.color=a.dColor; dl.style.background=a.dBg;
 
     // --- app list ---
-    listEl.innerHTML=results.map(function(a,i){
-      var icon=a.artworkUrl100||a.artworkUrl60||'';
-      var t=inTitle(a)?'<span class="badge-title">in title</span>':'';
-      var price=a.formattedPrice||(a.price===0?'Free':'');
-      return '<a class="row" href="'+esc(a.trackViewUrl||'#')+'" target="_blank" rel="noopener">'+
+    listEl.innerHTML=results.map(function(app,i){
+      var icon=app.artworkUrl100||app.artworkUrl60||'';
+      var t=a.inTitle(app)?'<span class="badge-title">in title</span>':'';
+      var price=app.formattedPrice||(app.price===0?'Free':'');
+      return '<a class="row" href="'+esc(app.trackViewUrl||'#')+'" target="_blank" rel="noopener">'+
         '<div class="rank">'+(i+1)+'</div>'+
         '<img class="ico" loading="lazy" src="'+esc(icon)+'" alt="" />'+
-        '<div class="meta"><div class="name">'+highlight(a.trackName||'',qTokens)+'</div>'+
-          '<div class="sub">'+esc(a.sellerName||a.artistName||'')+' · '+esc(a.primaryGenreName||'')+' '+t+'</div></div>'+
-        '<div class="stats"><span class="stars">'+stars(a.averageUserRating)+'</span> '+
-          '<span class="cnt">'+fmt(a.userRatingCount||0)+'</span>'+
+        '<div class="meta"><div class="name">'+highlight(app.trackName||'',a.qTokens)+'</div>'+
+          '<div class="sub">'+esc(app.sellerName||app.artistName||'')+' · '+esc(app.primaryGenreName||'')+' '+t+'</div></div>'+
+        '<div class="stats"><span class="stars">'+stars(app.averageUserRating)+'</span> '+
+          '<span class="cnt">'+fmt(app.userRatingCount||0)+'</span>'+
           '<span class="price">'+esc(price)+'</span></div>'+
       '</a>';
     }).join('');
 
     // --- adjacent keywords (mined from titles + descriptions) ---
-    var combined=results.map(function(a){return (a.trackName||'')+' '+(a.description||'');}).join(' ');
-    var adj=mineKeywords(combined,new Set(qTokens)).slice(0,18);
+    var combined=results.map(function(app){return (app.trackName||'')+' '+(app.description||'');}).join(' ');
+    var adj=mineKeywords(combined,new Set(a.qTokens)).slice(0,18);
     kwEl.innerHTML=adj.length?adj.map(function(p){
       return '<button class="kw" data-kw="'+esc(p[0])+'">'+esc(p[0])+'<span class="n">'+p[1]+'</span></button>';
     }).join(''):'<div style="color:var(--ink-soft);font-size:13px">No clear adjacent terms.</div>';
@@ -425,10 +462,10 @@
     });
 
     // --- title-usage panel ---
-    titleStatEl.innerHTML='<b>'+titleHits.length+' of '+top.length+'</b> top apps put “'+esc(term)+
-      '” in their title. '+(titleUsage>=0.6?'Crowded — hard to outrank on the title alone.':titleUsage<=0.2?'Open lane — few rivals claim it in the title.':'Some competition for the title slot.');
-    titleListEl.innerHTML=titleHits.length?titleHits.map(function(a){
-      return '<li>'+esc(a.trackName||'')+'<span>'+fmt(a.userRatingCount||0)+' ratings</span></li>';
+    titleStatEl.innerHTML='<b>'+a.titleHits.length+' of '+a.top.length+'</b> top apps put “'+esc(term)+
+      '” in their title. '+(a.titleUsage>=0.6?'Crowded — hard to outrank on the title alone.':a.titleUsage<=0.2?'Open lane — few rivals claim it in the title.':'Some competition for the title slot.');
+    titleListEl.innerHTML=a.titleHits.length?a.titleHits.map(function(app){
+      return '<li>'+esc(app.trackName||'')+'<span>'+fmt(app.userRatingCount||0)+' ratings</span></li>';
     }).join(''):'<li style="color:var(--ink-soft)">None of the top 10 use it in the title.</li>';
 
     stateEl.classList.add('hidden');
@@ -484,11 +521,75 @@
     });
   }
 
+  function compareCountries(term){
+    term=(term||'').trim();
+    if(!term)return;
+    qEl.value=term;
+    goEl.disabled=true; cmpEl.disabled=true;
+    setState('<div class="spinner"></div><div class="big">Comparing “'+esc(term)+'” across 8 markets…</div><div>Hitting all stores in parallel</div>');
+    Promise.all(COMPARE.map(function(c){
+      var url='https://itunes.apple.com/search?term='+encodeURIComponent(term)+
+              '&country='+c.code+'&entity=software&limit=20';
+      return jsonp(url).then(function(d){return {c:c,results:(d&&d.results)||[]};})
+        .catch(function(){return {c:c,results:[],err:true};});
+    })).then(function(rows){
+      goEl.disabled=false; cmpEl.disabled=false;
+      var anyData=rows.some(function(r){return r.results.length;});
+      if(!anyData){
+        if(sandboxed){
+          setState('<div class="big">This page can’t reach the App Store while it’s embedded.</div>'+
+            '<div>Download this file and open it directly in your browser, then try again.</div>');
+        }else{
+          setState('<div class="big">No data from any market for “'+esc(term)+'”.</div><div>Try a broader keyword.</div>');
+        }
+        return;
+      }
+      renderCompare(term,rows);
+    });
+  }
+
+  function renderCompare(term,rows){
+    var cards=rows.map(function(r){
+      if(!r.results.length){
+        return '<div class="cc empty">'+
+          '<div class="h"><div><div><span class="flag">'+r.c.flag+'</span><span class="name">'+esc(r.c.name)+'</span></div>'+
+          '<div class="meta">no results</div></div>'+
+          '<div><div class="diff" style="color:var(--ink-soft)">—</div></div></div></div>';
+      }
+      var a=analyze(term,r.results);
+      var top=r.results[0]||{};
+      return '<button class="cc" data-cc="'+r.c.code+'">'+
+        '<div class="h">'+
+          '<div><div><span class="flag">'+r.c.flag+'</span><span class="name">'+esc(r.c.name)+'</span></div>'+
+          '<div class="meta">'+fmt(a.medianRatings)+' median · '+a.titleHits.length+'/'+a.top.length+' in title</div></div>'+
+          '<div><div class="diff" style="color:'+a.dColor+'">'+a.difficulty+'</div>'+
+          '<div class="lbl" style="color:'+a.dColor+';background:'+a.dBg+'">'+a.dLabel+'</div></div>'+
+        '</div>'+
+        '<div class="top"><img src="'+esc(top.artworkUrl100||top.artworkUrl60||'')+'" alt=""><div class="tname">#1 '+esc(top.trackName||'')+'</div></div>'+
+      '</button>';
+    }).join('');
+    stateEl.innerHTML='<div class="compare-head"><div class="big">Difficulty for “'+esc(term)+'” across 8 stores</div>'+
+      '<div class="sub">Click any market to see the full ranking there.</div></div>'+
+      '<div class="compare-grid">'+cards+'</div>';
+    stateEl.classList.remove('hidden');
+    resEl.classList.add('hidden');
+    Array.prototype.forEach.call(stateEl.querySelectorAll('.cc[data-cc]'),function(card){
+      var code=card.getAttribute('data-cc');
+      card.addEventListener('click',function(){
+        cEl.value=code;
+        search(term);
+        window.scrollTo({top:0,behavior:'smooth'});
+      });
+    });
+  }
+
   // self-check (silent on pass, logs on regression)
   console.assert(parseAppId('https://apps.apple.com/us/app/instagram/id389801252')==='389801252','parseAppId url');
   console.assert(parseAppId('389801252')==='389801252','parseAppId bare id');
   console.assert(parseAppId('hello')===null,'parseAppId rejects garbage');
   console.assert(mineKeywords('hello hello world the and').length===2,'mineKeywords stop+dedup');
+  console.assert(analyze('x',[]).difficulty===0,'analyze empty');
+  console.assert(analyze('x',[{trackName:'x best',userRatingCount:1000000}]).difficulty>50,'analyze high difficulty');
 
   // events
   if(sandboxed){
@@ -499,6 +600,7 @@
   goEl.addEventListener('click',function(){search(qEl.value);});
   qEl.addEventListener('keydown',function(e){if(e.key==='Enter')search(qEl.value);});
   cEl.addEventListener('change',function(){if(qEl.value.trim())search(qEl.value);});
+  cmpEl.addEventListener('click',function(){compareCountries(qEl.value);});
   appGoEl.addEventListener('click',function(){scoutApp(appEl.value);});
   appEl.addEventListener('keydown',function(e){if(e.key==='Enter')scoutApp(appEl.value);});
   Array.prototype.forEach.call(document.querySelectorAll('.examples .chip'),function(c){
