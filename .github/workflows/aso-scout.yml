@@ -46,13 +46,17 @@ jobs:
           p = pathlib.Path('scout-log.md')
           if not p.exists():
               p.write_text('# Scout log — parent coach (US)\n\nBaseline 2026-06-25: Kidsit #30, difficulty 46.\n')
-          with p.open('a') as f:
-              f.write(f'\n## {today}\n')
-              f.write(f'- Kidsit rank: {rank_str} (Δ {delta_str} vs baseline)\n')
-              f.write(f'- Difficulty: {diff} ({lbl}) — baseline {BASE_DIFF}\n')
-              f.write(f'- Median ratings top-10: {med}\n')
-              f.write(f'- Title hits top-10: {ih}/10\n')
-              f.write(f'- Title indexed as: {ktitle or "n/a"}\n')
+          # ponytail: idempotent — skip if today's entry already exists
+          if f'## {today}\n' in p.read_text():
+              print(f'Entry for {today} already in scout-log.md; skipping append')
+          else:
+              with p.open('a') as f:
+                  f.write(f'\n## {today}\n')
+                  f.write(f'- Kidsit rank: {rank_str} (Δ {delta_str} vs baseline)\n')
+                  f.write(f'- Difficulty: {diff} ({lbl}) — baseline {BASE_DIFF}\n')
+                  f.write(f'- Median ratings top-10: {med}\n')
+                  f.write(f'- Title hits top-10: {ih}/10\n')
+                  f.write(f'- Title indexed as: {ktitle or "n/a"}\n')
 
           pathlib.Path('slack.json').write_text(json.dumps({
               'text': (
