@@ -140,13 +140,13 @@ You shipped 9 days ago — good. Keep a 2–3 week update cadence (even bugfix-o
 
 ## This week's checklist (when admin access is back)
 
-- [ ] App Store Connect → app → version → App Information: paste new title + subtitle
-- [ ] App Store Connect → app → version → swap genre order (Education first)
-- [ ] App Store Connect → app → version → Add Language: en-GB, en-AU, en-CA
-- [ ] For each new locale: clone US copy, paste a different keyword field from the table above
-- [ ] App Store Connect → IAPs → rename both subscription display names
-- [ ] In code: trigger `SKStoreReviewController.requestReview()` after a "this helped" tap (once per user)
-- [ ] Submit version for review
+- [x] App Store Connect → app → version → App Information: paste new title + subtitle
+- [x] App Store Connect → app → version → swap genre order (Education first)
+- [x] App Store Connect → app → version → Add Language: en-GB, en-AU, en-CA
+- [x] For each new locale: clone US copy, paste a different keyword field from the table above
+- [x] App Store Connect → IAPs → rename both subscription display names
+- [x] In code: trigger `SKStoreReviewController.requestReview()` after a "this helped" tap (once per user)
+- [x] Submit version for review
 - [ ] (Optional) Apple Search Ads → new campaign → keyword "parent coach", $3–5/day
 
 ---
