@@ -83,6 +83,30 @@
   button.go.alt:hover{border-color:var(--indigo);color:var(--indigo);background:var(--indigo-soft)}
   button.go.alt:disabled{opacity:.5;cursor:default}
 
+  /* Promotion plan row + panel */
+  .promote{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px}
+  .promote .lbl{font-size:12px;color:var(--ink-soft);font-family:var(--mono);margin-right:2px}
+  .promote input{
+    flex:1 1 220px;min-width:0;font-size:13.5px;font-family:var(--ui);color:var(--ink);
+    background:var(--card);border:1px solid var(--hair);border-radius:10px;padding:0 12px;height:36px;outline:none;
+  }
+  .promote input.kw{flex:0 1 180px}
+  .promote input::placeholder{color:#A8A4AD}
+  .promote-plan ol.plan{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:14px}
+  .promote-plan ol.plan li{display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:start;font-size:14px}
+  .promote-plan ol.plan li b{font-weight:600;color:var(--ink)}
+  .promote-plan ol.plan li .body{margin-top:4px;color:var(--ink-soft);font-size:13px;line-height:1.55}
+  .promote-plan ol.plan li code{font-family:var(--mono);background:var(--paper);padding:1px 6px;border-radius:5px;font-size:12.5px;color:var(--ink);border:1px solid var(--hair)}
+  .promote-plan .pri{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;padding:3px 0;border-radius:6px;text-align:center;width:40px}
+  .promote-plan .pri-p0{background:rgba(229,72,77,.14);color:var(--hard)}
+  .promote-plan .pri-p1{background:rgba(242,163,60,.16);color:var(--mid)}
+  .promote-plan .pri-p2{background:var(--indigo-soft);color:var(--indigo)}
+  .promote-plan .pri-ok{background:rgba(15,158,142,.14);color:var(--easy)}
+  .promote-plan .top3{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--ink-soft)}
+  .promote-plan .top3 a{color:var(--ink);text-decoration:none}
+  .promote-plan .top3 a:hover{color:var(--indigo)}
+  .promote-plan .sec{margin-top:18px;font-size:11px;color:var(--ink-soft);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em}
+
   /* App-mined keyword panel */
   .from-app{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:18px;margin-top:22px;text-align:left}
   .from-app .head{display:flex;gap:12px;align-items:center;margin-bottom:14px}
@@ -240,6 +264,13 @@
       <input id="appq" type="text" placeholder="App Store URL or ID — e.g. https://apps.apple.com/us/app/instagram/id389801252" autocomplete="off" />
       <button class="go alt" id="appgo">Mine keywords</button>
     </div>
+
+    <div class="promote">
+      <span class="lbl">plan to rank YOUR app for a keyword:</span>
+      <input id="prq" type="text" placeholder="Your app URL or ID" autocomplete="off" />
+      <input id="prkw" class="kw" type="text" placeholder="Keyword to win" autocomplete="off" />
+      <button class="go alt" id="prgo">Plan</button>
+    </div>
   </header>
 
   <div id="state" class="state">
@@ -311,6 +342,9 @@
       cmpEl=document.getElementById('cmpgo'),
       appEl=document.getElementById('appq'),
       appGoEl=document.getElementById('appgo'),
+      prEl=document.getElementById('prq'),
+      prKwEl=document.getElementById('prkw'),
+      prGoEl=document.getElementById('prgo'),
       stateEl=document.getElementById('state'),
       resEl=document.getElementById('results'),
       listEl=document.getElementById('list'),
@@ -594,6 +628,153 @@
     });
   }
 
+  function suggestTitle(title,term){
+    var cap=term.replace(/\b\w/g,function(c){return c.toUpperCase();});
+    var re=new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig');
+    var brand=(title||'').replace(re,'').replace(/[-—:|]+/g,' ').replace(/\s+/g,' ').trim();
+    return (cap+(brand?': '+brand:'')).slice(0,30);
+  }
+
+  // Promotion plan: given an app + a keyword, produce a ranked list of steps to move up.
+  function promote(rawId, term){
+    var id=parseAppId(rawId);
+    term=(term||'').trim();
+    if(!id){ setState('<div class="big">Paste your app\'s App Store URL or numeric ID.</div>'+
+      '<div>e.g. <code>https://apps.apple.com/us/app/your-app/id123456789</code></div>'); return; }
+    if(!term){ setState('<div class="big">Type the keyword you want to rank for.</div>'); return; }
+    prGoEl.disabled=true;
+    setState('<div class="spinner"></div><div class="big">Building plan for app '+esc(id)+' on "'+esc(term)+'"…</div><div>Reading the App Store</div>');
+    var lookup='https://itunes.apple.com/lookup?id='+encodeURIComponent(id)+'&country='+cEl.value+'&entity=software';
+    var search='https://itunes.apple.com/search?term='+encodeURIComponent(term)+'&country='+cEl.value+'&entity=software&limit=50';
+    Promise.all([jsonp(lookup),jsonp(search)]).then(function(arr){
+      prGoEl.disabled=false;
+      var app=arr[0]&&arr[0].results&&arr[0].results[0];
+      var results=(arr[1]&&arr[1].results)||[];
+      if(!app){ setState('<div class="big">No app found for ID '+esc(id)+' in this store.</div><div>Switch country or check the URL.</div>'); return; }
+      if(!results.length){ setState('<div class="big">No results for "'+esc(term)+'" in this store.</div>'); return; }
+      renderPromote(app,term,results);
+    }).catch(function(err){
+      prGoEl.disabled=false;
+      if(sandboxed){
+        setState('<div class="big">This page can\'t reach the App Store while embedded.</div><div>Open the file directly and try again.</div>');
+      }else{
+        setState('<div class="big">Couldn\'t reach the App Store ('+esc(err.message)+').</div>');
+      }
+    });
+  }
+
+  function renderPromote(app,term,results){
+    var a=analyze(term,results);
+    var qLower=term.toLowerCase();
+
+    // rank: where does this app sit for the term?
+    var rank=-1;
+    for(var i=0;i<results.length;i++){ if(String(results[i].trackId)===String(app.trackId)){ rank=i+1; break; } }
+
+    var title=app.trackName||'';
+    var kwIdx=title.toLowerCase().indexOf(qLower);
+
+    // suggested title: keyword (Title Case) + brand-ish remainder, ≤30 chars
+    // ponytail: naive rewrite, the user will tune by hand
+    var suggested=suggestTitle(title,term);
+
+    var locs=(app.languageCodesISO2A||[]).length;
+    var myGenre=app.primaryGenreName||'';
+    var gc={}; a.top.forEach(function(r){var g=r.primaryGenreName||'';gc[g]=(gc[g]||0)+1;});
+    var topGenre=Object.keys(gc).sort(function(x,y){return gc[y]-gc[x];})[0]||'';
+
+    var myRatings=app.userRatingCount||0;
+    var lastUpdate=app.currentVersionReleaseDate;
+    var daysSince=lastUpdate?Math.floor((Date.now()-new Date(lastUpdate).getTime())/86400000):null;
+
+    var combined=results.map(function(r){return (r.trackName||'')+' '+(r.description||'');}).join(' ');
+    var adj=mineKeywords(combined,new Set(a.qTokens)).slice(0,12);
+    var subtitleHint=adj.slice(0,3).map(function(p){return p[0];}).join(' ');
+
+    var steps=[];
+
+    // P0 — title
+    if(kwIdx<0){
+      steps.push({pri:'P0',head:'Add "'+esc(term)+'" to your title',
+        body:'Your title <code>'+esc(title)+'</code> doesn\'t contain the keyword. Title is Apple\'s heaviest signal (first ~12 chars weighted hardest).<br>Suggested (≤30): <code>'+esc(suggested)+'</code>'});
+    } else if(kwIdx>12){
+      steps.push({pri:'P0',head:'Move "'+esc(term)+'" to the start of your title',
+        body:'Currently at char '+kwIdx+' — Apple weights the first ~12 chars hardest.<br>Suggested rewrite: <code>'+esc(suggested)+'</code>'});
+    } else {
+      steps.push({pri:'OK',head:'Title already leads with "'+esc(term)+'"',body:'No change needed on the title.'});
+    }
+
+    // P0 — subtitle (API can't see it, so flag for manual check)
+    steps.push({pri:'P0',head:'Subtitle — Apple\'s API hides it, you must check',
+      body:'If your subtitle doesn\'t already include "'+esc(term)+'" or one of its bigrams, fix it (30 chars).<br>Phrases from top results: <code>'+esc(subtitleHint||(term+' tips'))+'</code>'});
+
+    // P1 — localizations
+    if(locs<4){
+      steps.push({pri:'P1',head:'Add '+(4-locs)+' English localization'+(4-locs===1?'':'s')+' (en-GB, en-AU, en-CA)',
+        body:'You\'re live in '+locs+' localization'+(locs===1?'':'s')+'. Each extra English locale gives a fully-indexed 100-char keyword field, queryable from the US store. Single highest-leverage hidden lever.'});
+    } else {
+      steps.push({pri:'OK',head:'Localizations look healthy ('+locs+')',body:''});
+    }
+
+    // P1 — keyword field suggestions (used by every localization)
+    var kwField=adj.slice(0,10).map(function(p){return p[0];}).join(',');
+    steps.push({pri:'P1',head:'Pack your 100-char keyword field with adjacent terms',
+      body:'Pulled from top-result titles + descriptions, dedup against your title/subtitle:<br><code>'+esc(kwField||term)+'</code>'});
+
+    // P1 — genre
+    if(topGenre && myGenre && topGenre!==myGenre){
+      steps.push({pri:'P1',head:'Switch primary genre to '+esc(topGenre),
+        body:'Top 10 for "'+esc(term)+'" is mostly '+esc(topGenre)+' ('+gc[topGenre]+'/10). You\'re '+esc(myGenre)+'. Apple weights category match.'});
+    }
+
+    // P1 — ratings
+    if(myRatings<a.medianRatings){
+      var gap=a.medianRatings-myRatings;
+      steps.push({pri:'P1',head:'Close the rating gap — need ~'+fmt(gap)+' more to hit top-10 median ('+fmt(a.medianRatings)+')',
+        body:'Trigger <code>SKStoreReviewController.requestReview()</code> after a positive moment (e.g., user taps "this helped"). Velocity counts more than total.'});
+    } else {
+      steps.push({pri:'OK',head:'Ratings already at/above top-10 median ('+fmt(a.medianRatings)+')',body:'Push metadata, not more ratings.'});
+    }
+
+    // P2 — update recency
+    if(daysSince!==null && daysSince>30){
+      steps.push({pri:'P2',head:'Ship an update — last release was '+daysSince+' days ago',
+        body:'Apple weights recency. Even a bugfix-only update revives the signal. Aim for a 2–3 week cadence.'});
+    }
+
+    // P2 — ASA
+    steps.push({pri:'P2',head:'Spin up Apple Search Ads on "'+esc(term)+'" ($3–5/day)',
+      body:'ASA installs feed organic install-velocity. Cheap CPC at low volume.'});
+
+    var html='<div class="from-app promote-plan">'+
+      '<div class="head">'+
+        '<img src="'+esc(app.artworkUrl100||app.artworkUrl60||'')+'" alt=""/>'+
+        '<div><div class="name">'+esc(title)+'</div>'+
+        '<div class="sub">Plan to rank for <b>'+esc(term)+'</b> · '+
+          (rank>0?'currently #'+rank:'not in top '+results.length)+
+          ' · difficulty <b style="color:'+a.dColor+'">'+a.difficulty+' '+a.dLabel+'</b>'+
+        '</div></div></div>'+
+      '<ol class="plan">'+
+        steps.map(function(s){
+          return '<li><span class="pri pri-'+s.pri.toLowerCase()+'">'+s.pri+'</span>'+
+            '<div><b>'+s.head+'</b>'+(s.body?'<div class="body">'+s.body+'</div>':'')+'</div></li>';
+        }).join('')+
+      '</ol>'+
+      '<div class="sec">Top 3 to study</div>'+
+      '<ol class="top3">'+
+        results.slice(0,3).map(function(t){
+          var inT=(t.trackName||'').toLowerCase().indexOf(qLower)>-1;
+          return '<li><a href="'+esc(t.trackViewUrl||'#')+'" target="_blank" rel="noopener">'+esc(t.trackName||'')+'</a> · '+
+            fmt(t.userRatingCount||0)+' ratings'+(inT?' · keyword in title':'')+'</li>';
+        }).join('')+
+      '</ol>'+
+    '</div>';
+
+    stateEl.innerHTML=html;
+    stateEl.classList.remove('hidden');
+    resEl.classList.add('hidden');
+  }
+
   function compareCountries(term){
     term=(term||'').trim();
     if(!term)return;
@@ -688,6 +869,8 @@
   console.assert(histKey('Loyalty Card','us')==='loyalty card|us','histKey lowercases');
   console.assert(ago(Date.now()-30000)==='just now','ago just now');
   console.assert(/m ago$/.test(ago(Date.now()-90000)),'ago minutes');
+  console.assert(suggestTitle('Kidsit AI - Parent Coach','parent coach')==='Parent Coach: Kidsit AI','suggestTitle moves keyword to front');
+  console.assert(suggestTitle('My App','parenting').indexOf('Parenting')===0,'suggestTitle prepends absent keyword');
 
   // events
   if(sandboxed){
@@ -701,6 +884,9 @@
   cmpEl.addEventListener('click',function(){compareCountries(qEl.value);});
   appGoEl.addEventListener('click',function(){scoutApp(appEl.value);});
   appEl.addEventListener('keydown',function(e){if(e.key==='Enter')scoutApp(appEl.value);});
+  prGoEl.addEventListener('click',function(){promote(prEl.value,prKwEl.value);});
+  prEl.addEventListener('keydown',function(e){if(e.key==='Enter')promote(prEl.value,prKwEl.value);});
+  prKwEl.addEventListener('keydown',function(e){if(e.key==='Enter')promote(prEl.value,prKwEl.value);});
   Array.prototype.forEach.call(document.querySelectorAll('.examples .chip'),function(c){
     c.addEventListener('click',function(){search(c.textContent);});
   });
